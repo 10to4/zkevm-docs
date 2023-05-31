@@ -6,13 +6,14 @@
 }
 </style>
 
-# Multi-Step Implementation
+# 多步骤实现
 
 <!-- toc -->
 
-# Introduction
+# 介绍
 
 In EVM, there are serveral opcodes moving dynamic-length bytes around between different sources, here is a complete list:
+在 EVM，有几个opcode在不同的源之间移动动态长度的字节。这里是完整的列表：
 
 <div id="wide-table">    
 <table>
@@ -73,70 +74,70 @@ In EVM, there are serveral opcodes moving dynamic-length bytes around between di
 </table>
 </div>
 
-With illustration:
+说明：
 
 ![](./multi-step_diagram.png)
 
-There could be classified to be 4 types:
+这些可以被分类为4中类型：
 
-1. `* -> memory (padding)`
-    - Including:
+1. `* -> 内存 (padding)`
+    - 介绍:
         - `CALLDATACOPY`
         - `CODECOPY`
         - `EXTCODECOPY`
-    - Copy from calldata or code to current memory.
-    - Memory gets filled with 0's when copied out of source's range, in other words, source is padded with 0's to the range.
-2. `* -> memory (no padding)`
-    - Including `RETURNDATACOPY`.
-    - Similar to Type 1, but the range is explicitly checked to be in source's range, otherwise the EVM halts with exception. So no padding issue.
-3. `memory -> * (no range capped)`
-    - Including:
-        - `RETURN` when `is_create`
+    - 从calldata或者代码中拷贝到当前内存。
+    - 当复制到源的范围之外时内存被用0填满，换句话说，源被用0填充到范围内。
+2. `* -> 内存 (no padding)`
+    - 包含 `RETURNDATACOPY`.
+    - 类似于类型1，但是范围被隐晦得在源范围内被检查，否则EVM被异常终止。所以没有padding的事儿。
+3. `内存 -> * (no range capped)`
+    - 包含:
+        - `RETURN` 当 `is_create`
         - `CREATE`
         - `CREATE2`
         - `SHA3`
-    - Copy from current memory to destination.
-    - No padding issue since memory is always expanded implicitly due to lazy initialization.
-4. `memory -> * (range capped)`
-    - Including:
-        - `RETURN` when `not_create`
-        - `REVERT` when `not_create`
-    - Similar to Type 3, but the range is capped by caller's assignment.
+    - 从当前内存到目的地的拷贝
+    -没有padding的事儿是因为内存总是因为lazy初始化而隐式得扩展
+4. `内存 -> * (range capped)`
+    - 包含:
+        - `RETURN` 当 `not_create`
+        - `REVERT` 当 `not_create`
+    - 类似于类型3，但是范围被调用者的assignment所限制。
 
-## Approaches
+## 方法
 
-### Approach #1 - Given access to previous step
+### 方法 #1 - 获得前一步骤的访问
 
-Take `CALLDATALOAD` as an example, in the [approach](https://github.com/appliedzkp/zkevm-specs/blob/2864c3f0f6cb905b8548da9cde76fea13a42085f/src/zkevm_specs/evm/execution_result/calldatacopy.py) by @icemelon, it requires access to previous step to infer what's the state of current step, to know if the step is the first step, we check
+以`CALLDATALOAD` 为例，在 @icemelon 的 [方法](https://github.com/appliedzkp/zkevm-specs/blob/2864c3f0f6cb905b8548da9cde76fea13a42085f/src/zkevm_specs/evm/execution_result/calldatacopy.py)，它需要获得前一个步骤来推断当前步骤的状态是什么，来知道是否这是第一步，我们检查
 
 1. `curr.opcode == CALLDATALOAD`
 2. `prev.execution_state != CALLDATALOAD or prev.finished is True`
 
-And it transit the `StepState` at the last step, which is inferred from if the bytes left to copy is less then a step's amount.
+并且在最后一步转换`StepState`，它从是否剩余去复制的字节小于步骤数量去推断出来。
 
-### Approach #2 - Introduce internal `ExecutionState`
+### 方法 #2 - 介绍内部 `ExecutionState`
 
-This approach introduce internal `ExecutionState` with extra constraint of `ExecutionState` transition, and the inputs will be passed by constraint from previous step. The new `ExecutionState` are:
+这个方法用`ExecutionState`转换的额外约束介绍内部`ExecutionState`，并且通过前一步骤输入将被传递，新的 `ExecutionState`是：
 
 - `CopyMemoryToMemory`
-    - Can only transited from:
+    - 仅可以转换自：
         - `RETURN`
         - `REVERT`
         - `CALLDATACOPY`
         - `RETURNDATACOPY`
-    - Inputs:
-        - `src_call_id` - id of source call (to be read)
-        - `dst_call_id` - id of destination call (to be written)
-        - `src_end` - end of source, it returns `0` when indexing out of this.
-        - `src_offset` - memory offset of source call
-        - `dst_offset` - memory offset of destination call
-        - `bytes_left` - how many bytes left to copy
-    - Note:
-        - The `src_end` is only used by `CALLDATACOPY` since only it needs padding.
+    - 输入：
+        - `src_call_id` - 源调用的索引（被读）
+        - `dst_call_id` - 目的地调用的索引（被写）
+        - `src_end` - 源终点，当索引超过它时返回`0`。 
+        - `src_offset` - 源调用的内存偏移
+        - `dst_offset` - 目的地调用的内存偏移
+        - `bytes_left` - 有多少剩余字节被拷贝
+    - 笔记:
+        - `src_end`仅由`CALLDATACOPY` 使用因为只有它需要padding。
 - `CopyTxCalldataToMemory`
-    - Can only transited from `CALLDATACOPY`
-    - Inputs:
-        - `tx_id` - id of current tx
+    - 仅能转换自`CALLDATACOPY`
+    - 输入:
+        - `tx_id` - 当前交易的索引
         - `src_end` - end of source, it returns `0` when indexing out of this
         - `src_offset` - calldata offset of tx
         - `dst_offset` - memory offset of current call
@@ -164,57 +165,55 @@ This approach introduce internal `ExecutionState` with extra constraint of `Exec
         - `dst_offset` - memory offset of current call
         - `bytes_left` - how many bytes left to copy
     - Note
-        - This differs from `CopyBytecodeToMemory` in that it doesn't have padding.
+        - `CopyBytecodeToMemory`的区别是它没有padding。
 
-> If we can have a better way to further generalize these inner `ExecutionState`, we can have less redundant implementation.
+
+> 如果我们能够拥有一个更好的方法去进一步概括这些内部`ExecutionState`，我们可以有更少得冗余实现。
 >
 > **han**
 
-And they do the bytes copy with range check specified by trigger `ExecutionState`.
+并且它们通过触发`ExecutionState`用范围检查做字节拷贝。
 
-Also these internal `ExecutionState`s always propagate `StepState`s as the same value, since the transition is already done by the trigger of `ExecutionState`.
+而且这些内部`ExecutionState`总是传播`StepState`作为相同值。因为转换已经由`ExecutionState`触发完成了。
 
-Take `CALL` then `CALLDATALOAD` as an example:
+先以`CALL`再以`CALLDATALOAD`为例：
 
-- Caller executes `CALL` with stack values (naming referenced from [`instruction.go#L668`](https://github.com/ethereum/go-ethereum/blob/master/core/vm/instructions.go#L668)):
+- 调用者使用栈的值执行`CALL`（名字引用自[`instruction.go#L668`](https://github.com/ethereum/go-ethereum/blob/master/core/vm/instructions.go#L668)）
     - `inOffset = 32`
     - `inSize = 32`
-- Callee executes `CALLDATALOAD` with stack values (naming referenced from [`instruction.go#L301-L303`](https://github.com/ethereum/go-ethereum/blob/master/core/vm/instructions.go#L301-L303)):
+- 调用者使用栈的值执行`CALL`（名字引用自[`instruction.go#L301-L303`](https://github.com/ethereum/go-ethereum/blob/master/core/vm/instructions.go#L301-L303)):
 	- `memOffset = 0`
 	- `dataOffset = 64`
 	- `length = 32`
-- The first step of `CopyMemoryToMemory` will receive inputs:
+- `CopyMemoryToMemory`的第一步骤将获得输入:
     - `src_call_id = caller_call_id`
     - `dst_call_id = callee_call_id`
     - `src_end = inOffset + inSize = 64`
     - `src_offset = inOffset + dataOffset = 96`
     - `dst_offset = memOffset = 0`
     - `bytes_left = length = 32`
+然后，在每一步骤中我们检查是否`src_offset < src_end`，如果不是，我们需要去关掉源查找并且将零填写到目的地。然后用我们在步骤中处理的字节的数量加上`*_offset`，并减去`bytes_left`，再传递到下一步骤。
 
-Then, in every step we check if `src_offset < src_end`, if not, we need to disable the source lookup and fill zeros into destination. Then add the `*_offset` by the amount of bytes we process at a step, and subtract `bytes_left` also by it, then propagate them to next step.
+## 总结
 
-## Conclusion
+两个方法的对比
 
-Comparison between the 2 approaches:
+- 方法 #1
+    - 优点
+        - 没有额外的 `ExecutionState`
+    - 缺点
+        - 每个多步骤子节点都有至少3个额外嵌套分支：
+            - `is_first` - 如果是第一步
+            - `not_first` - 如果是第n步
+            - `is_final` - 如果是最终步
+- 方法 #2
+    - 优点
+        - 每一个多步骤字节码仅需要准备这些内部`ExecutionState`的输入并做正确的`StepState` 转换。
+        - 只有两个嵌套分支:
+            - `not_final` - 如果是第n步
+            - `is_final` - 如果是最终步
+    - 缺点
+        - 额外的 `ExecutionState`
 
-- Approach #1
-    - Pros
-        - No additional `ExecutionState`
-    - Cons
-        - Each multi-step opcodes will have at least 3 extra nested branches:
-            - `is_first` - If the step is the first
-            - `not_first` - If the step is n-th step
-            - `is_final` - If the step is final
-- Approach #2
-    - Pros
-        - Each multi-step opcodes only need to prepare the inputs of those inner `ExecutionState` and do the correct `StepState` transition.
-        - Only 2 nested branches:
-            - `not_final` - If the step is n-th step
-            - `is_final` - If the step is final
-    - Cons
-        - Additional `ExecutionState`
-
-In the context of current implementation, approach #2 seems easier to implement due to the separation of complexity, and also less prover effort.
-
-In the context of re-designed EVM circuit (re-use instruction instead of building giant custom gates), it seems no difference on prover effort between the 2 approaches, but approach #2 seems better because it extracts the nested branch and should reduce the usage of rows.
-
+在当前实现的内容中，方法#2看起来更容易实现因为复杂性的分离，并也需要更少的证明消耗。
+重新设计EVM电路（重新使用指令而不是构建更大的自定义门）的内容中，显得两个方法的证明消耗没有不同，但是方法#2显得更好因为它提取嵌套分支并且应该减少行的使用。

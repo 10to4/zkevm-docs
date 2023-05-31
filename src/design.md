@@ -1,3 +1,3 @@
-# Design Notes
+# 设计笔记
 
-Here are some collected documents on design notes of the zkEVM.
+这里是一些zkEVM上设计笔记的文档集合

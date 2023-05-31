@@ -1,30 +1,33 @@
-# EVM Circuit
+# EVM 电路
 
 <!-- toc -->
 
-# Introduction
+# 介绍
 
-EVM circuit iterates over transactions included in the proof to verify that each execution step of a transaction is valid. Basically the scale of a step is the same as in the EVM, so usually we handle one opcode per step, except those opcodes like `SHA3` or `CALLDATACOPY` that operate on variable size of memory, which would require multiple "virtual" steps.
+EVM电路对交易进行迭代包括在验证交易中每一个执行步骤有效的证明。基本上一个步骤的规模与EVM上相同，所以通常我们一个步骤处理一个opcode，除了像`SHA3` 或者 `CALLDATACOPY` 这样在变长内存上操作的opcode，它们需要多个“虚拟”步骤。
 
-> The scale of a step somehow could be different depends on the approach, an extreme case is to implement a VM with reduced instruction set (like TinyRAM) to emulate EVM, which would have a much smaller step, but not sure how it compares to current approach.
->
+> 一个步骤的规模在某种程度上可能是不同的，这依赖于实现方法，一个极端的例子是实现一个降低指令集（如TinyRAM）的 VM 来模拟EVM，这里面会有更小得多的步骤，但是不确定如何与当前的步骤做比较。
+> 
 > **han**
 
-To verify if a step is valid, we first enumerate all possible execution results of a step in the EVM including success and error cases, and then build a custom constraint to verify that the step transition is correct for each execution result.
+未来验证有效的步骤，我们首先要列举一个步骤在EVM中所有可能的执行结果，包括成功和错误的例子，然后构建一个自定义约束来验证在每一个执行结果中步骤转换是对的。
 
-For each step, we constrain it to enable one of the execution results, and specially, to constrain the first step to enable `BEGIN_TX`, which then repeats the step to verify the full execution trace. Also each step is given access to next step to propagate the tracking information, by putting constraints like `assert next.program_counter == curr.program_counter + 1`.
+对于每一步骤来说，我们约束它使得它只能是执行结果之一，然后尤其是，去约束第一步骤是`BEGIN_TX`，然后重复这个步骤来验证完整的执行轨迹。同时每个步骤都可以访问下一个步骤来跟踪轨迹信息，通过下面的约束：
+`assert next.program_counter == curr.program_counter + 1`.
 
-# Concepts
 
-## Execution result
+# 概念
 
-It's intuitive to have each opcode as a branch in step. However, EVM has so rich opcodes that some of them are very similar like `{ADD,SUB}`, `{PUSH*}`, `{DUP*}` and `{SWAP*}` that seem to be handled by almost identical constraint with small tweak (to swap a value or automatically done due to linearity), it seems we could reduce our effort to only implement it once to handle multiple opcodes in single branch.
+## 执行结果
 
-In addition, an EVM state transition could also contain serveral kinds of error cases, we also need to take them into consideration to be equivalent to EVM. It would be annoying for each opcode branch to handle their own error cases since it needs to halt the step and return the execution context to caller.
+直觉上每个opcode都作为步骤的一个分支。但是，EVM拥有如此富足的opcode其中一部分的与 `{ADD,SUB}`, `{PUSH*}`, `{DUP*}` 和 `{SWAP*}` 非常相似这些似乎是由几乎相同的约束来处理的，只需要做一些小小的挑战（交换一个值或者由线性关系自动完成），似乎我们能够减少我们的工作通过只实现一次就能在单个分支里处理多个opcode。
 
-Fortunately, most error cases are easy to verify with some pre-built lookup table even they could happen to many opcodes, only some tough errors like out of gas due to dynamic gas usage need to be verified one by one. So we further unroll all kinds of error cases as kinds of execution result.
+另外，一个EVM状态转换也能过包含几种错误例子，我们也需要考虑到这些因素已能够跟EVM保持一致。每一个opcode分支去处理它们自己的错误例子是很烦的因为这需要去停止步骤然后返回执行内容给caller。
 
-So we can enumerate [all possible execution results](https://github.com/appliedzkp/zkevm-specs/blob/83ad4ed571e3ada7c18a411075574110dfc5ae5a/src/zkevm_specs/evm/execution_result/execution_result.py#L4) and turn EVM circuit into a finite state machine like:
+幸运的是，大部分错误例子使用预构建的lookup表是很容易被验证的，即使这些错误发生在很多的opcode上，只有一些棘手的错误例如out of gas 因为需要动态的Gas用量需要被逐一验证。所以我们进一步展开所有种类的错误例子作为执行结果的种类。
+
+所以我们可以列举[所有可能的执行结果](https://github.com/appliedzkp/zkevm-specs/blob/83ad4ed571e3ada7c18a411075574110dfc5ae5a/src/zkevm_specs/evm/execution_result/execution_result.py#L4)  并将EVM电路转换成终极状态机如：
+
 
 ```mermaid
 flowchart LR
@@ -55,24 +58,18 @@ flowchart LR
 ```
 
 - **BeginTx**:
-    - Beginning of a transaction.
+    - 一笔交易的开始。
 - **EVMExecStates** = [ SuccessStep | ReturnStep ]
 - **SuccessStep** = [ ExecStep | ExecMetaStep | ExecSubStep ]
-    - Set of states that suceed and continue the execution within the call.
+    - 在调用中成功并继续执行的状态集合
 - **ReturnStep** = [ ExplicitReturn | Error ]
-    - Set of states that halt the execution of a call and return to the caller
-      or go to the next tx.
+    - 停止调用的执行并返回给caller或者执行下一步骤的状态集合
 - **ExecStep**:
-    - 1-1 mapping with a GethExecStep for opcodes that map to a single gadget
-      with a single step.  Example: `ADD`, `MUL`, `DIV`, `CREATE2`.
+    - 带有 opcode 的 GethExecStep 的 1-1 映射来将一个单一步骤映射到一个单一的小工具上。例如：`ADD`, `MUL`, `DIV`, `CREATE2`。
 - **ExecMetaStep**:
-    - N-1 mapping with a GethExecStep for opcodes that share the same gadget
-      (due to similarity) with a single step.  For example `{ADD, SUB}`,
-      `{PUSH*}`, `{DUP*}` and `{SWAP*}`.
-      A good example on how these are grouped is the `StackOnlyOpcode` struct.
+    - 带有 opcode 的 GethExecStep 的 N-1 映射来将（相似的）单一步骤共享同一个小工具。例如 `{ADD, SUB}`, `{PUSH*}`, `{DUP*}` 和 `{SWAP*}`.
 - **ExecSubStep**:
-    - 1-N mapping with a GethExecStep for opcodes that deal with dynamic size
-      arrays for which multiple steps are generated.
+    - 带有 opcode 的 GethExecStep 的 1-N 映射来处理由多个步骤产生的动态大小的数组
         - `CALLDATACOPY` -> CopyToMemory
         - `RETURNDATACOPY` -> TODO
         - `CODECOPY` -> TODO
@@ -80,43 +77,40 @@ flowchart LR
         - `SHA3` -> IN PROGRESS
         - `LOGN` -> CopyToLog
 - **ExplicitReturn**:
-    - 1-1 mapping with a GethExecStep for opcodes that return from a call
-      without exception.
+    带有 opcode 的 GethExecStep 的 1-1 映射来从一个没有异常的调用中返回
 - **Error** = [ ErrorEnoughGas | ErrorOutOfGas ]
-    - Set of states that are associated with exceptions caused by opcodes.
+    - 由opcodes导致的异常相关联的状态集合
 - **ErrorEnoughGas**:
-    - Set of error states that are unrelated to out of gas.  Example:
+    - 与out of gas 不相关的错误状态集合。
+    例如：
       `InvalidOpcode`, `StackOverflow`, `InvalidJump`.
 - **ErrorOutOfGas**:
-    - Set of error states for opcodes that run out of gas. For each opcode
-      (sometimes group of opcodes) that has dynamic memory gas usage, there is
-      a specific **ErrorOutOfGas** error state.
+    - opcodes运行致out of gas的错误状态集合。对于每一个拥有动态内存Gas用量的opcode（有时候是opcode的集合），由一个特定的**ErrorOutOfGas** 错误状态。
 - **EndTx**
-    - End of a transaction.
+    - 终止交易。
 - **EndBlock**
-    - End of a block (serves also as padding for the rest of the state step slots)
+    - 结束一个区块（也可以为其与状态步骤槽的填充）
 
 
-> In the current implementation, we ask the opcode implementer to also implement error cases, which seems to be a redundant effort.
-> But by doing this, they can focus more on opcode's success case. Also error cases are usually easier to verify, so I think it also reduces the overall implementation complexity.
+> 在当前的实现中，我们让opcode实现者也实现了错误的例子，这似乎是冗余的工作。
+> 但是通过做这些，它们可以更专注于opcode的成功例子。错误例子也通常更容易验证，所以我认为这也降低了整体的实现复杂性。
 >
 > **han**
 
-## Random access data
+## 随机访问数据
 
-In EVM, the interpreter has the ability to do any random access to data like block context, account balance, stack and memory in current scope, etc... Some of these access are read-write and others are read-only.
+在EVM中，解释器由能力去做任何对数据的随机访问，如区块内容，账户余额，当前区域的栈和内存，等等。这些访问的内容有些是可读可写的，有些是只读的。
+在EVM电路中，我们利用[电路作为查找表](#Circuit-as-a-lookup-table)的概念去复制这些随机数据访问到其他不同layout的电路上并验证这些是一致的并且有效的。在这些随机数据访问被验证后，我们可以当作它们仅仅只是一张表一样去使用它们。[这里](https://github.com/appliedzkp/zkevm-specs/blob/83ad4ed571/src/zkevm_specs/evm/table.py#L108) 就是当前在EVM电路里使用的表格。
 
-In EVM circuit, we leverage the concept [Circuit as a lookup table](#Circuit-as-a-lookup-table) to duplicate these random data access to other circuits in a different layout and verify that they are consistent and valid. After these random data access are verified, we can use them just as if they were only tables. [Here](https://github.com/appliedzkp/zkevm-specs/blob/83ad4ed571/src/zkevm_specs/evm/table.py#L108) are the tables currently used in the EVM circuit.
+对于可读可写的访问数据，EVM电路使用一个持续的`rw_counter` （读写计数器）去查找状态电路来保证读写是按照时间先后排列顺序的。它还使用一个标志 `is_write` 去检查不同写访问下的数据一致性。
 
-For read-write access data, EVM circuit looks up State circuit with a sequentially `rw_counter` (read-write counter) to make sure the read-write access is chronological. It also uses a flag `is_write` to check data consistency between different write access.
-
-For read-only access data, EVM circuit looks-up Bytecode circuit, Tx circuit and Call circuit directly.
+对于只读访问数据，EVM电路直接去查找字节电路，交易电路和调用电路。
 
 ## Reversible write reversion
+## 可回退的写回退
 
-In EVM, reversible writes can be reverted if any call fails. There are many kinds of reversible writes, a complete list can be found [here](https://github.com/ethereum/go-ethereum/blob/master/core/state/journal.go#L87-L141).
-
-In EVM circuit, each call is attached with a flag (`is_persistent`) to know if it succeeds or not. So ideally, we only need to do reversion on these kinds of reversible writes which affect future execution before reversion:
+在EVM中，可回退的写可能被回退如果调用失败的话。有很多种可逆的写，完整的列表可以在[这里](https://github.com/ethereum/go-ethereum/blob/master/core/state/journal.go#L87-L141) 找到。
+在EVM电路中，每一个调用被贴上一个标签（`is_persistent`）来获知它是否成功。所以理想情况下，我们只需要去回退这些在回退之前会影响未来执行种类的可回退写操作：
 
 - `TxAccessListAccount`
 - `TxAccessListStorageSlot`
@@ -125,12 +119,12 @@ In EVM circuit, each call is attached with a flag (`is_persistent`) to know if i
 - `AccountCodeHash`
 - `AccountStorage`
 
-On some others we don't need to do reversion because they don't affect future execution before reversion, we only write them when `is_persistent` is `1`:
+在一些其他的地方我们不需要去做回退因为它们在回退之前不影响未来的执行，当`is_persistent` 是1时，我们仅仅写它们：
 
 - `TxRefund`
 - `AccountDestructed`
 
-> Another tag is `TxLog`, which also doesn't affect future execution. It should be explained where to write such record to after we decide where to build receipt trie.
+> 另一个标签是 `TxLog`，它也不会影响到未来的执行。在我们决定哪里去构建收据库之后，它应该被解释哪里写这些记录。
 >
 > **han**
 
@@ -146,39 +140,46 @@ For more notes on reversible write reversion see:
 - [Design Notes, Reversible Write Reversion Note 1](../design/reversible-write-reversion.md)
 - [Design Notes, Reversible Write Reversion Note 2](../design/reversible-write-reversion2.md)
 
-## Opcode fetching
+为了能够回退可回退的写操作，我们需要一些关于调用的元信息：
 
-In EVM circuit, there are 3 kinds of opcode source for execution or copy:
+1. `is_persistent` - 获知是否我们需要回退。
+2. `rw_counter_end_of_reversion` - 获知我们未来在哪个点上回退。
+3. `reversible_write_counter` - 获知直到现在我们已经做了多少可回退写操作。 
 
-1. Contract interaction:
-    Opcode is lookup from contract bytecode in Bytecode circuit by tuple `(code_hash, index, opcode)`
-2. Contract creation in root call:
-    Opcode is lookup from tx calldata in Tx circuit by tuple `(tx_id, TxTableTag.Calldata, index, opcode)`
-3. Contract creation in internal call:
-    Opcode is lookup from caller's memory in State circuit by tuple `(rw_counter, False, caller_id, index, opcode)`
+## Opcode 获取
 
-Before we fetch opcode from any source, it checks if the index is in the given range, if not, it follows the behavior of current EVM to implicitly returning `0`.
+在 EVM电路中，有三类opcode源用于执行或者拷贝：
+1.  合约交互
+    Opcode 是通过元组 `(code_hash, index, opcode)` 从字节码电路中的合约字节码中查找到的。
+2.  在根调用上的合约创建
+    Opcode 是通过元组 `(tx_id, TxTableTag.Calldata, index, opcode)` 从交易电路中的tx calldata中查找到的。
+3.  在内部调用上的合约创建
+    Opcode 是通过元组 `(rw_counter, False, caller_id, index, opcode)` 从状态电路中的调用者内存中查找到的。
 
-## Internal call
+在从任意源获取opcode之前，它检查是否索引在一个给定范围内，如果不在，它遵循当前 EVM 的行为去隐式得返回`0`。
 
-EVM supports internal call triggered by opcodes. In EVM circuit, the opcodes (like `CALL` or `CREATE`) that trigger internal call, will:
-- Save their own `call_state` into State circuit.
-- Setup next call's context.
-- Initialize next step's `call_state` to start a new environment.
+## 内部调用
 
-Then the opcodes (like `RETURN` or `REVERT`) and error cases that halt, will restore caller's `call_state` and set it back to next step.
+EVM 支持由opcode触发的内部调用。在 EVM 电路里，触发内部调用的这些 opcode（如 `CALL` 或 `CREATE`）将：
+- 保存它们自己的`call_state` 到状态电路中
+- 启动下一个调用的内容
+- 初始化下一步骤的 `call_state` 来启动一个新环境。
 
-For a simple `CALL` example with illustration (many details are hided for simplicity):
+然后这些opcodes（如 `RETURN` 或 `REVERT`）和错误例子被终止，将存储调用者的`call_state` 并将其设置为下一个步骤。
+
+对一个简单的`CALL`例子的说明（为使简洁很多细节被隐藏了）：
 
 ![](./evm-circuit_internal-call.png)
 
-# Constraints
+## 内部调用
+
+# 约束
 
 ## `main`
 
 ==TODO== Explain each execution result
 
-# Implementation
+# 实现
 
 - [spec](https://github.com/appliedzkp/zkevm-specs/blob/master/specs/evm-proof.md)
     - [python](https://github.com/appliedzkp/zkevm-specs/tree/master/src/zkevm_specs/evm)

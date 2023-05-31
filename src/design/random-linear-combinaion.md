@@ -1,56 +1,51 @@
-# Random Linear Combination
+# 随机线性组合
 
 <!-- toc -->
 
-## Introduction
+## 介绍
 
-In the circuit, in order to reduce the number of constraints, we use the random linear combination as a cheap hash function on range-checked bytes for two scenarios:
+在电路中，为例减少约束的数量，我们使用随机线性组合作为一个廉价的哈希函数去为两个场景随机-检查字节：
+1. 在254比特域上编码32字节的词（256比特）
+2. 在254比特域上累计（或者调整/编码）任意长度字节
 
-1. Encode 32-bytes word (256-bits) in 254-bits field
-2. Accumulate (or fit/encode) arbitrary-length bytes in 254-bits field
+第一个场景中，允许我们用单个witness值去存储一个EVM词，而不必担心一个词在这个域上并不匹配的情况。大部分时间我们直接移动这些线性组合词从这里到那里，并且仅当我们需要执行计算或者位操作时我们将编码词语为字节（在每个字节上使用范围检查）来做当前操作。
+或者我们也可以用两个witness值存储一个EVM词语，代表高部分和低部分：但是这就使得我们需要将每个词转移到两个witness值。注意从随机线性组合中获得的约束的优化还没有被正确分析。
+在第二个场景中，允许我们去很容易得为一笔交易或者merkle (hexary) patricia trie节点在固定数量的witness上做RLP编码，而不必担心RLP编码字节变成任意长或者有限长度（对于MPT节点有一个最大长度，但是交易没有）。每一个累加的witness将进一步得解压/分解/解码成几个字节并作为输入喂给`keccak256`。
 
-On the first scenario, it allows us to store an EVM word in a single witness value, without worrying about the fact that a word doesn't fit in the field. Most of the time we move these random linear combination word directly from here to there, and only when we need to perform arithmetic or bitwise operation we will decode the word into bytes (with range check on each byte) to do the actual operation.
-
-Alternatively we could also store an EVM word in 2 witnes values, representing hi-part and lo-part; but it makes us need to move 2 witnes valuess around for each word. Note that the constraints optimizations obtained by using the random linear combination have not been properly analized yet. 
-
-On the second scenario, it allows us to easily do RLP encoding for a transaction or a merkle (hexary) patricia trie node in a fixed amount of witnesses, without worrying about the fact that RLP encoded bytes could have arbitrary and unlimited length (for MPT node it has a max length, but for tx it doesn't). Each accumulated witness will be further decompress/decomposite/decode into serveral bytes and fed to `keccak256` as input.
-
-> It would be really nice if we can further ask `keccak256` to accept a accumulated witness and the amount of bytes it contains as inputs.
+> 如果我们进一步问`keccak256`去获得一个累加的witness及它在输入中包含的字节数量就更好了。
 >
 > **han**
 
-## Concern on randomness
+## 随机性的关注
 
-The way randomness is derived for random linear combination is important: if done improperly, a malicious prover could find a collision to make a seemigly incorrect witness pass the verification (allowing minting Ether from thin air).
+随机性的方式对随机线性组合很重要：如果操作不当，一个恶意的验证者能够找到一个碰撞让一个看起来不正确的witness通过验证（允许凭空造出以太）。
 
-Here are 2 approaches trying to derive a reasonable randomness to mitigate the risk.
+下面是两种方法试图得出一个合理的随机性来减轻风险。
 
-### 1. Randomness from committed polynomials with an extra round
+### 1. 使用额外的一轮从承诺的多项式得出随机数
+假定在我们的约束系统中我们能够分离所有随机线性组合的witness到不同的多项式中，我们可以：
+1. 承诺多项式，但随机线性witness的承诺除外
+2. 从公共输入的承诺中产生随机数
+3. 继续证明处理。
 
-Assuming we could separate all random linear combined witnesses to different polynomials in our constraint system, we can:
-1. Commit polynomials except those for random linear combined witnesses
-2. Derive the randomness from commitments as public input
-3. Continue the proving process.
+### 从电路的公开输入从得到随机数
 
-### 2. Randomness from all public inputs of circuit
+> 更新：我们应该只要跟着传统的Fiat-Shamir（方法1），去承诺并生成挑战数。假定EVM状态转换是确定的，这对恶意验证者是行不通的。
 
-> Update: We should just follow traditional Fiat-Shamir (approach 1), to always commit and generate challenge. Assuming EVM state transition is deterministic is not working for malicious prover.
+电路的公共输入至少包含：
 
-The public inputs of circuit at least contains:
+- 交易元数据（输入）
+- 老的状态trie根（输入）
+- 新的状态trie根（输出）
 
-- Transactions raw data (input)
-- Old state trie root (input)
-- New state trie root (output)
+尽管事实上新的状态trie根可能是不正确的（在攻击的例子中），由于状态trie根隐含所有包含的字节（包括交易原始数据），如果我们从所有这些中生成随机数，恶意证明者需要首先确定新的（不正确的）状态trie根是什么，并且再找到输入和输出的碰撞。这就限制了碰撞对的可能性因为输入和输出也是固定的。
 
-Regardless of the fact that the new state trie root could be an incorrect one (in the case of an attack), since the state trie root implies all the bytes it contains (including transaction raw data), if we derive the randomness from all of them, the malicious prover needs to first decide what's the new (incorrect) state trie root and then find the collisions with input and output.  This somehow limits the possible collision pairs because the input and output are also fixed.
+## 使用随机线性组合的一个小的确定性系统
 
-## A minimal deterministic system using random linear combination
+以下的例子展示了随机线性组合是怎么用来比较使用单个witness值的词语的相等性。
+假定一个确定性的虚拟机由两个字节码`PUSH32` 和 `ADD`组成，并且VM作为单个函数`run` 运行描述为：
 
-The following example shows how the random linear combination is used to compare equality of words using a single witness value.
-
-Suppose a deterministic virtual machine consists of 2 opcodes `PUSH32` and `ADD`, and the VM runs as a pure function `run` as described:
-
-### Pseudo code
+### 伪代码
 
 ```python
 def randomness_approach_2(bytecode: list, claimed_output: list) -> int:
@@ -96,11 +91,11 @@ def run(bytecode: list, claimed_output: list):
     assert rlc_to_bytes[stack.pop()] == claimed_output, "unsatisfied"
 ```
 
-### [Full runnable code](./random-linear-combinaion/full-runnable-code.md)
+### [完整的运行代码](./random-linear-combinaion/full-runnable-code.md)
 
-All the random linear combination or decompression will be constraint in PLONK constraint system, where the randomness is fed as public input.
+所有随机线性组合或者压缩将在PLONK约束系统中被约束，其中随机数被公共输入喂进去。
 
-The randomness is derived from both input and output (fed to keccak256), which corresponds to [approach 2](#2-Randomness-from-all-public-inputs-of-circuit). Although it uses raw value in bytes instead of hashed value, but assuming the keacck256 and the merkle (hexary) patricia trie in Ethereum are collision resistant, it should be no big differece between the two cases.
+这个随机数从输入输出中产生（喂给keccak256），对应于[方法 2](#2-Randomness-from-all-public-inputs-of-circuit)。虽然输入字节中的原始数据代替哈希值，但是假定keacck256 和以太坊上的 merkle (hexary) patricia tries是碰撞冲突的，在两个例子中没有很大的不同。
 
-The issue at least reduces to: **Whether a malicious prover can find collisions between stack push and pop, after it decides the input and output**.
+这个例子至少减少为：**是否恶意证明者可以在确定输入和输出后发现栈的push和pop之间的冲突**。
 

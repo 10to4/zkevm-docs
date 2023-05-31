@@ -1,6 +1,5 @@
-# ECDSA Cicruit
+# ECDSA 电路
 
-ECDSA circuit iterates over signatures to verify recovered public key from signature is valid, or verify signature is invalid.
+ECDSA 电路在前面上迭代以验证从签名中恢复公钥是有效的，或者证明签名是无效的。
 
-It serves as a lookup table for EVM and Tx circuit to do public key recover.
-
+它作为 EVM 和 Tx 电路的查找表来做公钥恢复。

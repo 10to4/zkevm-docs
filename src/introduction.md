@@ -1,46 +1,28 @@
-# Introduction
+# 介绍
 
-The zkEVM aims to specify and implement a solution to validate Ethereum blocks
-via zero knowledge proofs.  The project aims to achieve 100% compatibility with
-the Ethereum's EVM. It's an open-source project that is contributed and owned
-by the community. Check out the contributors at
-[here](https://github.com/appliedzkp/zkevm-circuits/graphs/contributors) and
-[here](https://github.com/appliedzkp/zkevm-specs/graphs/contributors).
+zkEVM 旨在阐述和实现一个通过零知识证明来验证以太坊区块的方案。这个项目的目的是实现与以太坊的EVM 100%兼容。这是一个由社区贡献并属于社区的开源项目。查看贡献者在：
+[这里](https://github.com/appliedzkp/zkevm-circuits/graphs/contributors) 和
+[这里](https://github.com/appliedzkp/zkevm-specs/graphs/contributors).
 
-This book contains general documentation of the project.
+这本书包含项目的一般文件。
 
-The project currently has two goals:
+这个项目当前有两个目标：
 
 ## zkRollup
 
-Build a solution that allows deploying a layer 2 network that is compatible
-with the Ethereum ecosystem (by following the Ethereum specification) and
-submits zero knowledge proofs of correctly constructed new blocks to a layer 1
-smart contract which validates such proofs (and acts as a consensus layer).
+构建一个方案它允许部署一个兼容以太坊生态的二层网络（按照以太坊的具体要求）并提交正确构造新块的零知识证明到一层验证这个证明的智能合约中（扮演共识层）。
+这个零知识证明验证区块的用法允许客户端去以比处理交易更快的速度来验证交易，来提供扩展性的优势。
 
-The usage of zero knowledge proofs to validate blocks allows clients to
-validate transactions quicker than it takes to process them, offering benefits
-in scalability.
+## 验证证明
 
-## Validity proofs
+构建一个解决方案它允许从一个存在的以太坊网络（比如主网）生成区块的零知识证明，并且在同一个网络的智能合约上公布证明。
+这个零知识证明验证区块的用法允许轻客户端以低资源消耗去快速同步很多区块，并且在不需要信任外部各方前提下保证区块的正确性。
 
-Build a solution that allows generating zero knowledge proofs of blocks from an
-existing Ethereum network (such as mainnet), and publish them in a smart
-contract in the same network.
 
-The usage of zero knowledge proofs to validate blocks allows light clients to
-quickly synchronize many blocks with low resource consumption, while
-guaranteeing the correctness of the blocks without needing trust on external
-parties.
+# 状态
+zkEVM项目还不完整，所以你可以找到还没有实现，不完整或者没有一个具体要求的部分。并且已经实现的其他部分在未来也有可能回改变。
 
-# Status
+# 链接
 
-The zkEVM project is not yet complete, so you may find parts that are not yet
-implemented, incomplete, or don't have a specification.  At the same time,
-other parts which are already implemented may be changed in the future.
-
-# Links
-
-- [Implementation](https://github.com/appliedzkp/zkevm-circuits)
-- [Specification](https://github.com/appliedzkp/zkevm-specs)
-
+- [实现](https://github.com/appliedzkp/zkevm-circuits)
+- [具体要求](https://github.com/appliedzkp/zkevm-specs)

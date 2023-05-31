@@ -1,27 +1,24 @@
-# State Circuit
+# 状态电路
 
 <!-- toc -->
 
-# Introduction
+# 介绍
 
-The State circuit iterates over random read-write access records of EVM circuit to verify that each piece of data is consistent between different writes. It also verifies the state merkle patricia trie root hash corresponds to a valid transition from old to new one incrementally, where both are from public input.
+状态电路在EVM电路的随机读写访问记录上迭代来验证每一片数据在不同写入中都是一致的。这也验证了从老的到新的，来自于公共输入的状态merkle patricia trie根哈希对应于有效的交易。
+为了验证数据是否一致，首先要验证所有访问记录都由他们唯一标识组成并按照访问顺序排序。然后验证写入的两个记录是一致的。也验证了数据是正确的格式。
+它作为EVM电路的查找表去保持随机读写访问是一致的。
+为了阻止人访问记录的意恶意插入，我们也验证了在状态电路上随机读写访问记录的数量等于EVM电路的数量（`rw_counter`的最终值）。
+# 内容
 
-To verify if data is consistent, it first verifies that all access records are grouped by their unique identifier and sorted by order of access. Then verifies that the records between writes are consistent. It also verifies that data is in the correct format.
-
-It serves as a lookup table for EVM circuit to do consistent random read-write access.
-
-To prevent any malicious insertion of access record, we also verify the amount of random read-write access records in State circuit is equal to the amount in EVM circuit (the final value of `rw_counter`).
-
-# Concepts
-
-## Read-write unit grouping
+## 读写单元分组
 
 The first thing to ensure data is consistent between different writes is to give each data an unique identifier, then group data chunks by the unique identifier. And finally, then sort them by order of access `rw_counter`.
 
 Here are all kinds of data with their unique identifier:
+要确认数据在不同写入之间保持一致的第一件事是给每一个数据一个唯一标识，然后通过唯一标识将数据分组。并且最终，按照访问`rw_counter`的顺序对它排序。
 
 
-| Tag                       | Unique Index                             | Values                                |
+| 标签                       | 唯一标识                            | 值                                |
 | ------------------------- | ---------------------------------------- | ------------------------------------- |
 | `TxAccessListAccount`     | `(tx_id, account_address)`               | `(is_warm, is_warm_prev)`             |
 | `TxAccessListAccountStorage` | `(tx_id, account_address, storage_slot)` | `(is_warm, is_warm_prev)`             |
@@ -33,28 +30,26 @@ Here are all kinds of data with their unique identifier:
 | `Stack`                   | `(call_id, stack_address)`               | `(value)`                             |
 | `Memory`                  | `(call_id, memory_address)`              | `(byte)`                              |
 
-Different tags have different constraints on their grouping and values.
+在它们的组和值上不同标签由不同的约束。
+为了方便大部分标签也保证前面的值`*_prev`，这有助于减少EVM电路在执行与当前值`diff`的写入时的查找工作，或者执行一个还原写。
 
-Most tags also keep the previous value `*_prev` for convenience, which helps reduce the lookup when EVM circuit is performing a write with a `diff` to the current value, or performing a write with a reversion.
+## Lazy 初始化
 
-## Lazy initialization
+EVM内存隐式得扩展，例如，当内存是空的并且它遇到一个`mload(32)`， EVM 首先扩展到内存大小为`64`，然后再加载刚刚初始化的字节压到栈里，这里值总是为`0`。
+隐式扩展行为使得在EVM电路中即使简单的`MLOAD` 和 `MSTORE` 也变得复杂了，所以我们用一个技巧通过约束每一个记录单元的第一条记录为写操作或者值为`0`去外包状态电路的工作。它节约了扩展内存的工作量并忽略那些未使用过的内存，仅使用过的内存地址将用`0`初始化，以此作为lazy初始化。
 
-EVM's memory expands implicitly, for example, when the memory is empty and it enounters a `mload(32)`, EVM first expands to memory size to `64`, and then loads the bytes just initialized to push to the stack, which is always a `0`.
-
-The implicit expansion behavior makes even the simple `MLOAD` and `MSTORE` complicated in EVM circuit, so we have a trick to outsource the effort to State circuit by constraining the first record of each memory unit to be a write or have value `0`. It saves the variable amount of effort to expand memory and ignore those never used memory, only used memory addresses will be initlized with `0` so as lazy initialization.
-
-> This concept is also used in another case: the opcode `SELFDESTRUCT` also has ability to update the variable amount of data. It resets the `balance`, `nonce`, `code_hash`, and every `storage_slot` even if it's not used in the step. So for each state under account, we can add a `revision_id` handle such case, see [Design Notes, Reversible Write Reversion Note2, SELFDESTRUCT](./reversible-write-reversion2.md#selfdestruct) for details.
-> ==TODO== Convert this into an issue for discussion
+> 这些内容也用在另一个例子中：opcode `SELFDESTRUCT` 也可以更新数据的变量数量。重置`balance`, `nonce`, `code_hash`和每一个`storage_slot`即使步骤中没有使用。所以账户下的每一个状态，我们可以添加一个`revision_id`来处理这样的例子，细节看[设计笔记，可回退写的回退笔记，SELFDESTRUCT](./reversible-write-reversion2.md#selfdestruct)。
+> ==TODO== 将此转化为一个问题进行讨论
 >
 > **han**
 
 ## Trie opening and incrementally update
 
-# Constraints
+# 约束
 
 ## `main`
 
-==TODO== Explain each tag
+==TODO== 解释这些标签
 
 <!--
 ##### `tx_access_list_account`
@@ -69,7 +64,7 @@ The implicit expansion behavior makes even the simple `MLOAD` and `MSTORE` compl
 ##### `memory`
  -->
 
-# Implementation
+# 实现
 
 - [spec](https://github.com/appliedzkp/zkevm-specs/blob/master/specs/state-proof.md)
     - [python](https://github.com/appliedzkp/zkevm-specs/blob/master/src/zkevm_specs/state.py)

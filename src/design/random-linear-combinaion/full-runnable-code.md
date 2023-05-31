@@ -1,4 +1,4 @@
-# Random Linear Combination full runnable code
+# 随机线性组合完整可运行代码
 
 ```python
 from Crypto.Hash import keccak

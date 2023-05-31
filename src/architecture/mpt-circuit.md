@@ -1,5 +1,5 @@
-# Merkle Patricia Trie Circuit
+# Merkle Patricia Trie 电路
 
-MPT circuit (Merkle Patricia Trie circuit) iterates over merkle patricia trie transition to verify each update is valid.
+MPT 电路（Merkle Patricia circuit）在merkle patricia trie 变换上迭代以验证每一个更新是有效的。
 
-It serves as a lookup table for State and Tx circuit to do merkle patricia trie update.
+它作为状态和Tx电路的查找表做merkle patricia trie更新。

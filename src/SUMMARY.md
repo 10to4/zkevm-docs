@@ -1,4 +1,4 @@
-# Summary
+# 总结
 
 - [Introduction](./introduction.md)
 - [Circuit Architecture](./architecture.md)
